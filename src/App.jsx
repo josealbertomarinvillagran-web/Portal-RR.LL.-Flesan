@@ -156,11 +156,24 @@ export default function App() {
     setIsDrawingSignature(false);
   };
 
-  // FUNCIÓN PARA FORZAR DESCARGA (Evita el Bucle)
-  const getDownloadUrl = (url) => {
-    if (!url) return '#';
-    if (url.includes('/upload/fl_attachment/')) return url;
-    return url.replace('/upload/', '/upload/fl_attachment/');
+  // NUEVA FUNCIÓN: Descarga forzada usando JavaScript (Evita bloqueos de Cloudinary)
+  const handleForceDownload = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'documento_flesan.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Error al forzar descarga:", error);
+      // Fallback por si la red falla
+      window.open(url, '_blank');
+    }
   };
 
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
@@ -173,7 +186,8 @@ export default function App() {
     formData.append('upload_preset', 'documentos_flesan'); 
     
     try {
-      const res = await fetch('https://api.cloudinary.com/v1_1/ki3o9nju/auto/upload', {
+      // CAMBIO CLAVE: Usamos 'raw/upload' en lugar de 'auto/upload' para que Cloudinary no interfiera con el PDF
+      const res = await fetch('https://api.cloudinary.com/v1_1/ki3o9nju/raw/upload', {
         method: 'POST',
         body: formData
       });
@@ -199,7 +213,7 @@ export default function App() {
   };
 
   const handleDeleteDocument = async (workerId, currentDocs, docIndex) => {
-    if (window.confirm("¿Estás seguro de que deseas quitar este documento del perfil? Esta acción no se puede deshacer.")) {
+    if (window.confirm("¿Estás seguro de que deseas quitar este documento del perfil?")) {
       const updatedDocs = currentDocs.filter((_, index) => index !== docIndex);
       try {
         await updateDoc(doc(db, 'trabajadores', workerId), {
@@ -232,7 +246,6 @@ export default function App() {
       alert("Por favor, crea tu Firma Digital primero en la sección de arriba.");
       return;
     }
-
     if (!window.confirm("Al ACEPTAR, confirmas haber previsualizado el documento y autorizas aplicar tu firma digital con validez legal.")) return;
 
     const updatedDocs = [...(currentUser.documentos || [])];
@@ -321,7 +334,6 @@ export default function App() {
 
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
           <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Mi Firma Digital</h3>
-          
           {isDrawingSignature ? (
             <SignaturePad onSave={handleSaveSignature} onCancel={() => setIsDrawingSignature(false)} />
           ) : currentUser.firma ? (
@@ -353,15 +365,9 @@ export default function App() {
                   <div className="mb-4 md:mb-0 w-full md:w-1/2">
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
                     {!doc.firmado && <p className="text-xs text-gray-500 mt-1">Debes leer el documento antes de firmar.</p>}
-                    
-                    {/* BOTONES SIEMPRE VISIBLES (VER Y DESCARGAR) */}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">
-                        👁️ Ver Online
-                      </a>
-                      <a href={getDownloadUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">
-                        ⬇️ Descargar PDF
-                      </a>
+                      <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">👁️ Ver Online</a>
+                      <button onClick={() => handleForceDownload(doc.url, doc.nombre)} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">⬇️ Descargar PDF</button>
                     </div>
                   </div>
                   <div className="w-full md:w-auto mt-2 md:mt-0">
@@ -371,32 +377,13 @@ export default function App() {
                         <p className="text-xs text-gray-400">Fecha: {new Date(doc.fechaFirma).toLocaleDateString()}</p>
                       </div>
                     ) : (
-                      <button onClick={() => handleSignDocument(index)} className="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto">
-                        Aplicar mi Firma
-                      </button>
+                      <button onClick={() => handleSignDocument(index)} className="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto">Aplicar mi Firma</button>
                     )}
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Seguridad</h3>
-          <form onSubmit={async (e) => {
-            e.preventDefault();
-            if (!newPassword) return;
-            try {
-              await updateDoc(doc(db, 'trabajadores', currentUser.id), { password: newPassword });
-              setPasswordMessage('¡Contraseña actualizada!');
-              setNewPassword('');
-            } catch (err) { setPasswordMessage('Error al actualizar.'); }
-          }} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-            <input type="password" placeholder="Nueva contraseña" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="border border-gray-300 p-2 rounded w-full sm:w-64 focus:outline-none focus:border-blue-500" required />
-            <button type="submit" className="bg-gray-600 text-white px-4 py-2 rounded font-medium hover:bg-gray-700 transition-colors">Actualizar Contraseña</button>
-          </form>
-          {passwordMessage && <p className="mt-3 text-sm font-medium text-green-600">{passwordMessage}</p>}
         </div>
       </div>
     );
@@ -442,7 +429,6 @@ export default function App() {
                       {uploadingId === worker.id ? '⏳ Subiendo...' : '📄 Subir PDF'}
                       <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleFileUpload(worker.id, worker.documentos, e)} disabled={uploadingId === worker.id} />
                     </label>
-                    <button onClick={() => handleResetPassword(worker.id)} className="text-yellow-600 hover:bg-yellow-50 border border-yellow-200 px-3 py-1 rounded text-sm transition-colors" title="Restablecer clave a 'pass'">Reiniciar Clave</button>
                     <button onClick={() => handleDeleteWorker(worker.id)} className="text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1 rounded text-sm transition-colors">Borrar Trabajador</button>
                   </div>
                 </div>
@@ -457,14 +443,14 @@ export default function App() {
                             <p className="font-medium text-gray-800">📄 {docItem.nombre}</p>
                             <div className="flex gap-3 mt-1">
                               <a href={docItem.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">👁️ Ver</a>
-                              <a href={getDownloadUrl(docItem.url)} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:underline text-xs">⬇️ Descargar</a>
+                              <button onClick={() => handleForceDownload(docItem.url, docItem.nombre)} className="text-gray-600 hover:underline text-xs text-left">⬇️ Descargar</button>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-3">
                             <span className={`px-2 py-1 rounded text-xs font-bold ${docItem.firmado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                               {docItem.firmado ? 'FIRMADO' : 'PENDIENTE'}
                             </span>
-                            <button onClick={() => handleDeleteDocument(worker.id, worker.documentos, idx)} className="text-red-500 hover:text-red-700 hover:bg-red-50 font-bold px-3 py-1 rounded border border-transparent hover:border-red-200 transition-colors" title="Eliminar este documento">✕</button>
+                            <button onClick={() => handleDeleteDocument(worker.id, worker.documentos, idx)} className="text-red-500 hover:text-red-700 hover:bg-red-50 font-bold px-3 py-1 rounded border border-transparent hover:border-red-200 transition-colors">✕</button>
                           </div>
                         </div>
                       ))}

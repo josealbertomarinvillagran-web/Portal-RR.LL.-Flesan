@@ -91,7 +91,6 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [isDrawingSignature, setIsDrawingSignature] = useState(false);
-  const [isLoadingDoc, setIsLoadingDoc] = useState(false); // Estado para avisar que se está cargando el visor
 
   useEffect(() => {
     if (userRole === 'admin') {
@@ -158,80 +157,69 @@ export default function App() {
   };
 
   // ==========================================
-  // MAGIA PURA: DESCARGA Y VISOR LOCAL (BLOB)
+  // NUEVO SISTEMA: FIREBASE BASE64 (Sin Cloudinary)
   // ==========================================
-  const handlePreview = async (url) => {
-    try {
-      setIsLoadingDoc(true);
-      const response = await fetch(url);
-      const arrayBuffer = await response.arrayBuffer();
-      // Forzamos el tipo PDF para que Chrome lo abra perfecto
-      const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-      const blobUrl = window.URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank'); // Abre en nueva pestaña sin bucles
-    } catch (error) {
-      alert("Error al cargar la previsualización.");
-    } finally {
-      setIsLoadingDoc(false);
-    }
-  };
 
-  const handleDownload = async (url, filename) => {
-    try {
-      setIsLoadingDoc(true);
-      const response = await fetch(url);
-      const arrayBuffer = await response.arrayBuffer();
-      const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-      const blobUrl = window.URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename || 'Documento_Flesan.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      alert("Error al descargar el documento.");
-    } finally {
-      setIsLoadingDoc(false);
-    }
-  };
-
-
+  // 1. Subir a Firebase
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
     const file = event.target.files[0];
     if (!file) return;
 
+    // Límite de seguridad para Firestore (800KB)
+    if (file.size > 800000) {
+      alert("⚠️ El archivo es demasiado pesado. Por favor sube un PDF de menos de 800KB.");
+      return;
+    }
+
     setUploadingId(workerId);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', 'documentos_flesan'); 
     
-    try {
-      const res = await fetch('https://api.cloudinary.com/v1_1/ki3o9nju/auto/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
+    // Transformamos el PDF en un código de texto (Base64)
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+      const base64Pdf = reader.result; 
       
-      if (data.secure_url) {
-        const newDoc = {
-          nombre: file.name,
-          url: data.secure_url,
-          fecha: new Date().toISOString(),
-          firmado: false
-        };
+      const newDoc = {
+        nombre: file.name,
+        url: base64Pdf, // Guardamos el PDF completo como texto en Firebase
+        fecha: new Date().toISOString(),
+        firmado: false
+      };
+
+      try {
         await updateDoc(doc(db, 'trabajadores', workerId), {
           documentos: [...currentDocs, newDoc]
         });
-        alert('Documento subido con éxito.');
+        alert('Documento guardado con éxito en Firebase.');
+      } catch (error) {
+        alert('Error al guardar el documento.');
+      } finally {
+        setUploadingId(null);
       }
-    } catch (error) {
-      alert('Error al subir el documento.');
-    } finally {
-      setUploadingId(null);
-    }
+    };
+  };
+
+  // 2. Previsualizar (Abre una ventana limpia)
+  const handlePreview = (base64Url) => {
+    const pdfWindow = window.open("");
+    pdfWindow.document.write(`
+      <html>
+        <head><title>Previsualización de Documento</title></head>
+        <body style="margin:0; padding:0; overflow:hidden;">
+          <embed width="100%" height="100%" src="${base64Url}" type="application/pdf">
+        </body>
+      </html>
+    `);
+  };
+
+  // 3. Descargar Directamente (Garantizado)
+  const handleDownload = (base64Url, filename) => {
+    const link = document.createElement('a');
+    link.href = base64Url;
+    link.download = filename || 'Documento_Flesan.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDeleteDocument = async (workerId, currentDocs, docIndex) => {
@@ -388,12 +376,8 @@ export default function App() {
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
                     {!doc.firmado && <p className="text-xs text-gray-500 mt-1">Debes leer el documento antes de firmar.</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      <button onClick={() => handlePreview(doc.url)} disabled={isLoadingDoc} className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium disabled:opacity-50">
-                        {isLoadingDoc ? '⏳ Abriendo...' : '👁️ Ver Online'}
-                      </button>
-                      <button onClick={() => handleDownload(doc.url, doc.nombre)} disabled={isLoadingDoc} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium disabled:opacity-50">
-                        {isLoadingDoc ? '⏳ Descargando...' : '⬇️ Descargar PDF'}
-                      </button>
+                      <button onClick={() => handlePreview(doc.url)} className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">👁️ Ver Online</button>
+                      <button onClick={() => handleDownload(doc.url, doc.nombre)} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">⬇️ Descargar PDF</button>
                     </div>
                   </div>
                   <div className="w-full md:w-auto mt-2 md:mt-0">
@@ -468,8 +452,8 @@ export default function App() {
                           <div className="flex-1 truncate mb-2 sm:mb-0 mr-4">
                             <p className="font-medium text-gray-800">📄 {docItem.nombre}</p>
                             <div className="flex gap-3 mt-1">
-                              <button onClick={() => handlePreview(docItem.url)} disabled={isLoadingDoc} className="text-blue-600 hover:underline text-xs text-left disabled:opacity-50">👁️ Ver</button>
-                              <button onClick={() => handleDownload(docItem.url, docItem.nombre)} disabled={isLoadingDoc} className="text-gray-600 hover:underline text-xs text-left disabled:opacity-50">⬇️ Descargar</button>
+                              <button onClick={() => handlePreview(docItem.url)} className="text-blue-600 hover:underline text-xs text-left">👁️ Ver</button>
+                              <button onClick={() => handleDownload(docItem.url, docItem.nombre)} className="text-gray-600 hover:underline text-xs text-left">⬇️ Descargar</button>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-3">

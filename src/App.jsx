@@ -66,15 +66,9 @@ const SignaturePad = ({ onSave, onCancel }) => {
         className="w-full bg-blue-50 border border-blue-200 rounded cursor-crosshair touch-none"
       />
       <div className="flex justify-end gap-2 mt-3">
-        <button onClick={clearCanvas} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-100">
-          Limpiar
-        </button>
-        <button onClick={onCancel} className="px-4 py-2 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50">
-          Cancelar
-        </button>
-        <button onClick={() => onSave(canvasRef.current.toDataURL('image/png'))} className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
-          Guardar Firma
-        </button>
+        <button onClick={clearCanvas} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded hover:bg-gray-100">Limpiar</button>
+        <button onClick={onCancel} className="px-4 py-2 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50">Cancelar</button>
+        <button onClick={() => onSave(canvasRef.current.toDataURL('image/png'))} className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Guardar Firma</button>
       </div>
     </div>
   );
@@ -162,6 +156,13 @@ export default function App() {
     setIsDrawingSignature(false);
   };
 
+  // FUNCIÓN PARA FORZAR DESCARGA (Evita el Bucle)
+  const getDownloadUrl = (url) => {
+    if (!url) return '#';
+    if (url.includes('/upload/fl_attachment/')) return url;
+    return url.replace('/upload/', '/upload/fl_attachment/');
+  };
+
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -197,15 +198,13 @@ export default function App() {
     }
   };
 
-  // NUEVA FUNCIÓN: Eliminar un documento específico del perfil
   const handleDeleteDocument = async (workerId, currentDocs, docIndex) => {
-    if (window.confirm("¿Estás seguro de que deseas quitar este documento del perfil del trabajador? Esta acción no se puede deshacer.")) {
+    if (window.confirm("¿Estás seguro de que deseas quitar este documento del perfil? Esta acción no se puede deshacer.")) {
       const updatedDocs = currentDocs.filter((_, index) => index !== docIndex);
       try {
         await updateDoc(doc(db, 'trabajadores', workerId), {
           documentos: updatedDocs
         });
-        // Si el admin está borrando un documento de sí mismo (poco probable, pero por si acaso), actualizamos el estado
         if (currentUser && currentUser.id === workerId) {
           setCurrentUser({ ...currentUser, documentos: updatedDocs });
         }
@@ -332,17 +331,13 @@ export default function App() {
               </div>
               <div className="text-sm text-gray-500">
                 <p>Esta es tu firma legal registrada.</p>
-                <button onClick={() => setIsDrawingSignature(true)} className="mt-2 text-blue-600 font-medium hover:underline">
-                  Crear una nueva firma
-                </button>
+                <button onClick={() => setIsDrawingSignature(true)} className="mt-2 text-blue-600 font-medium hover:underline">Crear una nueva firma</button>
               </div>
             </div>
           ) : (
             <div className="text-center p-6 bg-yellow-50 rounded border border-yellow-200">
               <p className="text-yellow-800 mb-3">Aún no tienes una firma digital registrada.</p>
-              <button onClick={() => setIsDrawingSignature(true)} className="bg-yellow-500 text-white px-6 py-2 rounded font-medium hover:bg-yellow-600 transition-colors">
-                Crear Firma Digital Ahora
-              </button>
+              <button onClick={() => setIsDrawingSignature(true)} className="bg-yellow-500 text-white px-6 py-2 rounded font-medium hover:bg-yellow-600 transition-colors">Crear Firma Digital Ahora</button>
             </div>
           )}
         </div>
@@ -354,22 +349,29 @@ export default function App() {
           ) : (
             <div className="space-y-4">
               {docs.map((doc, index) => (
-                <div key={index} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-gray-50 border border-gray-200 rounded">
-                  <div className="mb-4 sm:mb-0 w-full sm:w-1/2">
+                <div key={index} className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 bg-gray-50 border border-gray-200 rounded">
+                  <div className="mb-4 md:mb-0 w-full md:w-1/2">
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
-                    <p className="text-xs text-gray-500 mt-1">Debes previsualizar antes de firmar.</p>
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">
-                      👁️ Previsualizar Documento
-                    </a>
+                    {!doc.firmado && <p className="text-xs text-gray-500 mt-1">Debes leer el documento antes de firmar.</p>}
+                    
+                    {/* BOTONES SIEMPRE VISIBLES (VER Y DESCARGAR) */}
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">
+                        👁️ Ver Online
+                      </a>
+                      <a href={getDownloadUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">
+                        ⬇️ Descargar PDF
+                      </a>
+                    </div>
                   </div>
-                  <div>
+                  <div className="w-full md:w-auto mt-2 md:mt-0">
                     {doc.firmado ? (
-                      <div className="text-right">
-                        <span className="bg-green-100 text-green-700 px-3 py-1 rounded text-sm font-bold uppercase block mb-1">✅ Documento Firmado</span>
-                        <span className="text-xs text-gray-400">Fecha: {new Date(doc.fechaFirma).toLocaleDateString()}</span>
+                      <div className="text-left md:text-right">
+                        <span className="bg-green-100 text-green-700 px-3 py-1 rounded text-sm font-bold uppercase inline-block mb-1">✅ Documento Firmado</span>
+                        <p className="text-xs text-gray-400">Fecha: {new Date(doc.fechaFirma).toLocaleDateString()}</p>
                       </div>
                     ) : (
-                      <button onClick={() => handleSignDocument(index)} className="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full sm:w-auto">
+                      <button onClick={() => handleSignDocument(index)} className="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto">
                         Aplicar mi Firma
                       </button>
                     )}
@@ -450,20 +452,19 @@ export default function App() {
                     <p className="text-sm font-semibold text-gray-600 mb-2">Documentos asignados:</p>
                     <div className="space-y-2">
                       {worker.documentos.map((docItem, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-gray-200">
-                          <a href={docItem.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium flex-1 truncate mr-4">📄 {docItem.nombre}</a>
-                          <div className="flex items-center gap-3">
+                        <div key={idx} className="flex flex-col sm:flex-row sm:justify-between sm:items-center text-sm bg-white p-3 rounded border border-gray-200">
+                          <div className="flex-1 truncate mb-2 sm:mb-0 mr-4">
+                            <p className="font-medium text-gray-800">📄 {docItem.nombre}</p>
+                            <div className="flex gap-3 mt-1">
+                              <a href={docItem.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">👁️ Ver</a>
+                              <a href={getDownloadUrl(docItem.url)} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:underline text-xs">⬇️ Descargar</a>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-3">
                             <span className={`px-2 py-1 rounded text-xs font-bold ${docItem.firmado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                               {docItem.firmado ? 'FIRMADO' : 'PENDIENTE'}
                             </span>
-                            {/* BOTÓN MAGICO DE BORRAR DOCUMENTO */}
-                            <button 
-                              onClick={() => handleDeleteDocument(worker.id, worker.documentos, idx)} 
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50 font-bold px-2 py-1 rounded border border-transparent hover:border-red-200 transition-colors" 
-                              title="Eliminar este documento"
-                            >
-                              ✕
-                            </button>
+                            <button onClick={() => handleDeleteDocument(worker.id, worker.documentos, idx)} className="text-red-500 hover:text-red-700 hover:bg-red-50 font-bold px-3 py-1 rounded border border-transparent hover:border-red-200 transition-colors" title="Eliminar este documento">✕</button>
                           </div>
                         </div>
                       ))}

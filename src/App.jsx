@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { collection, addDoc, onSnapshot, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { PDFDocument, rgb } from 'pdf-lib'; // IMPORTANTE: Librería para modificar PDFs
 
 // ==========================================
 // FUNCIÓN MÁGICA: Convierte texto a archivo físico en memoria
@@ -30,8 +31,10 @@ const SignaturePad = ({ onSave, onCancel }) => {
     canvas.width = canvas.offsetWidth;
     canvas.height = 200; 
     const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
+    
+    // TINTA AZUL PARA LA FIRMA
+    ctx.strokeStyle = '#0033CC'; 
+    ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
   }, []);
 
@@ -69,7 +72,7 @@ const SignaturePad = ({ onSave, onCancel }) => {
 
   return (
     <div className="bg-white border-2 border-gray-300 rounded-lg p-2 mb-4">
-      <p className="text-sm text-gray-500 mb-2 font-medium">Dibuja tu firma aquí (Usa tu dedo o el mouse):</p>
+      <p className="text-sm text-gray-500 mb-2 font-medium">Dibuja tu firma legal aquí (Tinta Azul):</p>
       <canvas
         ref={canvasRef}
         onMouseDown={startPosition}
@@ -107,6 +110,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [isDrawingSignature, setIsDrawingSignature] = useState(false);
+  const [isSigning, setIsSigning] = useState(false); // Para mostrar estado de carga al firmar
 
   useEffect(() => {
     if (userRole === 'admin') {
@@ -173,7 +177,7 @@ export default function App() {
   };
 
   // ==========================================
-  // MANEJO DE ARCHIVOS LOCAL (Sin bucles)
+  // MANEJO DE ARCHIVOS LOCAL
   // ==========================================
 
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
@@ -212,7 +216,6 @@ export default function App() {
     };
   };
 
-  // VERSIÓN CORRECTA DE PREVISUALIZACIÓN: Usando Blob Object URL
   const handlePreview = (base64Url) => {
     try {
       const blob = base64ToBlob(base64Url);
@@ -223,7 +226,6 @@ export default function App() {
     }
   };
 
-  // VERSIÓN CORRECTA DE DESCARGA: Usando Blob Object URL
   const handleDownload = (base64Url, filename) => {
     try {
       const blob = base64ToBlob(base64Url);
@@ -236,7 +238,7 @@ export default function App() {
       link.click();
       
       document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl); // Limpia la memoria
+      URL.revokeObjectURL(blobUrl); 
     } catch (error) {
       alert("Error al descargar el documento.");
     }
@@ -271,25 +273,87 @@ export default function App() {
     }
   };
 
+  // ==========================================
+  // FUNCIÓN ESTRELLA: Estampar Firma en el PDF
+  // ==========================================
   const handleSignDocument = async (docIndex) => {
     if (!currentUser.firma) {
       alert("Por favor, crea tu Firma Digital primero en la sección de arriba.");
       return;
     }
-    if (!window.confirm("Al ACEPTAR, confirmas haber previsualizado el documento y autorizas aplicar tu firma digital con validez legal.")) return;
+    if (!window.confirm("Al ACEPTAR, autorizas aplicar tu firma digital con validez legal. El archivo será modificado permanentemente.")) return;
 
-    const updatedDocs = [...(currentUser.documentos || [])];
-    updatedDocs[docIndex].firmado = true;
-    updatedDocs[docIndex].fechaFirma = new Date().toISOString();
+    setIsSigning(true); // Bloquear botón mientras procesa
 
     try {
+      const docToSign = currentUser.documentos[docIndex];
+      
+      // 1. Convertir Base64 a ArrayBuffer para pdf-lib
+      const existingPdfBytes = await fetch(docToSign.url).then(res => res.arrayBuffer());
+      
+      // 2. Cargar el PDF para editarlo
+      const pdfDoc = await PDFDocument.load(existingPdfBytes);
+      
+      // 3. Cargar la imagen de la firma (PNG)
+      const signatureImage = await pdfDoc.embedPng(currentUser.firma);
+      
+      // 4. Obtener las páginas (lo firmaremos en la última página)
+      const pages = pdfDoc.getPages();
+      const lastPage = pages[pages.length - 1];
+      
+      // 5. Estampar la imagen y el texto legal
+      const sigDims = signatureImage.scale(0.4); // Ajustar tamaño de la firma
+      lastPage.drawImage(signatureImage, {
+        x: 50,
+        y: 60, // Posición desde abajo
+        width: sigDims.width,
+        height: sigDims.height,
+      });
+
+      // Texto legal en azul corporativo
+      lastPage.drawText(`FIRMADO DIGITALMENTE POR: ${currentUser.nombre}`, {
+        x: 50,
+        y: 45,
+        size: 10,
+        color: rgb(0, 0.2, 0.8), // Azul
+      });
+      
+      const fechaFirma = new Date().toLocaleString();
+      lastPage.drawText(`RUT: ${currentUser.rut} - FECHA: ${fechaFirma} - DOCUMENTO SELLADO`, {
+        x: 50,
+        y: 30,
+        size: 9,
+        color: rgb(0, 0.2, 0.8),
+      });
+
+      // 6. Configurar Metadatos para "Sellar" el documento (Propiedades del PDF)
+      pdfDoc.setTitle(`${docToSign.nombre} - FIRMADO`);
+      pdfDoc.setAuthor('Flesan RH - Portal Seguro');
+      pdfDoc.setSubject('Documento Legal Sellado');
+      pdfDoc.setKeywords(['Firma', 'Flesan', currentUser.rut]);
+      pdfDoc.setProducer('Sistema RRHH Flesan');
+
+      // 7. Guardar el nuevo PDF como Base64
+      const pdfBase64 = await pdfDoc.saveAsBase64({ dataUri: true });
+
+      // 8. Sobrescribir el documento en Firebase
+      const updatedDocs = [...currentUser.documentos];
+      updatedDocs[docIndex].url = pdfBase64; // IMPORTANTE: Guardamos el archivo modificado
+      updatedDocs[docIndex].firmado = true;
+      updatedDocs[docIndex].fechaFirma = new Date().toISOString();
+
       await updateDoc(doc(db, 'trabajadores', currentUser.id), {
         documentos: updatedDocs
       });
+      
       setCurrentUser({ ...currentUser, documentos: updatedDocs });
-      alert("Documento firmado exitosamente.");
+      alert("¡Documento estampado y sellado exitosamente!");
+
     } catch (error) {
-      alert("Error al firmar.");
+      console.error(error);
+      alert("Hubo un error al procesar y estampar el PDF.");
+    } finally {
+      setIsSigning(false);
     }
   };
 
@@ -407,7 +471,9 @@ export default function App() {
                         <p className="text-xs text-gray-400">Fecha: {new Date(doc.fechaFirma).toLocaleDateString()}</p>
                       </div>
                     ) : (
-                      <button onClick={() => handleSignDocument(index)} className="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto">Aplicar mi Firma</button>
+                      <button onClick={() => handleSignDocument(index)} disabled={isSigning} className="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto disabled:opacity-50">
+                        {isSigning ? 'Procesando...' : 'Aplicar mi Firma'}
+                      </button>
                     )}
                   </div>
                 </div>

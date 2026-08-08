@@ -156,24 +156,17 @@ export default function App() {
     setIsDrawingSignature(false);
   };
 
-  // NUEVA FUNCIÓN: Descarga forzada usando JavaScript (Evita bloqueos de Cloudinary)
-  const handleForceDownload = async (url, filename) => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = filename || 'documento_flesan.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      console.error("Error al forzar descarga:", error);
-      // Fallback por si la red falla
-      window.open(url, '_blank');
-    }
+  // NUEVAS FUNCIONES DE ENLACE: Seguras y garantizadas
+  const getPreviewUrl = (url) => {
+    if (!url) return '#';
+    // Usamos el visor corporativo de Google Docs para evitar el bug de Chrome
+    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=false`;
+  };
+
+  const getDownloadUrl = (url) => {
+    if (!url) return '#';
+    if (url.includes('/upload/fl_attachment/')) return url;
+    return url.replace('/upload/', '/upload/fl_attachment/');
   };
 
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
@@ -186,8 +179,8 @@ export default function App() {
     formData.append('upload_preset', 'documentos_flesan'); 
     
     try {
-      // CAMBIO CLAVE: Usamos 'raw/upload' en lugar de 'auto/upload' para que Cloudinary no interfiera con el PDF
-      const res = await fetch('https://api.cloudinary.com/v1_1/ki3o9nju/raw/upload', {
+      // Volvemos a auto/upload (Permitido por Cloudinary)
+      const res = await fetch('https://api.cloudinary.com/v1_1/ki3o9nju/auto/upload', {
         method: 'POST',
         body: formData
       });
@@ -366,8 +359,9 @@ export default function App() {
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
                     {!doc.firmado && <p className="text-xs text-gray-500 mt-1">Debes leer el documento antes de firmar.</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">👁️ Ver Online</a>
-                      <button onClick={() => handleForceDownload(doc.url, doc.nombre)} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">⬇️ Descargar PDF</button>
+                      {/* ENLACES ACTUALIZADOS Y GARANTIZADOS */}
+                      <a href={getPreviewUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">👁️ Ver Online</a>
+                      <a href={getDownloadUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">⬇️ Descargar PDF</a>
                     </div>
                   </div>
                   <div className="w-full md:w-auto mt-2 md:mt-0">
@@ -429,6 +423,7 @@ export default function App() {
                       {uploadingId === worker.id ? '⏳ Subiendo...' : '📄 Subir PDF'}
                       <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleFileUpload(worker.id, worker.documentos, e)} disabled={uploadingId === worker.id} />
                     </label>
+                    <button onClick={() => handleResetPassword(worker.id)} className="text-yellow-600 hover:bg-yellow-50 border border-yellow-200 px-3 py-1 rounded text-sm transition-colors" title="Restablecer clave a 'pass'">Reiniciar Clave</button>
                     <button onClick={() => handleDeleteWorker(worker.id)} className="text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1 rounded text-sm transition-colors">Borrar Trabajador</button>
                   </div>
                 </div>
@@ -442,8 +437,9 @@ export default function App() {
                           <div className="flex-1 truncate mb-2 sm:mb-0 mr-4">
                             <p className="font-medium text-gray-800">📄 {docItem.nombre}</p>
                             <div className="flex gap-3 mt-1">
-                              <a href={docItem.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">👁️ Ver</a>
-                              <button onClick={() => handleForceDownload(docItem.url, docItem.nombre)} className="text-gray-600 hover:underline text-xs text-left">⬇️ Descargar</button>
+                              {/* ENLACES ACTUALIZADOS Y GARANTIZADOS */}
+                              <a href={getPreviewUrl(docItem.url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">👁️ Ver</a>
+                              <a href={getDownloadUrl(docItem.url)} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:underline text-xs">⬇️ Descargar</a>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-3">

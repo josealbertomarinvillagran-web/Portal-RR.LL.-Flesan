@@ -3,6 +3,22 @@ import { db } from './firebase';
 import { collection, addDoc, onSnapshot, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 
 // ==========================================
+// FUNCIÓN MÁGICA: Convierte texto a archivo físico en memoria
+// ==========================================
+const base64ToBlob = (base64String) => {
+  const parts = base64String.split(',');
+  const byteString = atob(parts[1] || parts[0]);
+  const mimeString = parts[0].split(':')[1].split(';')[0] || 'application/pdf';
+
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new Blob([ab], { type: mimeString });
+};
+
+// ==========================================
 // COMPONENTE: PANEL DE DIBUJO DE FIRMA
 // ==========================================
 const SignaturePad = ({ onSave, onCancel }) => {
@@ -157,15 +173,13 @@ export default function App() {
   };
 
   // ==========================================
-  // NUEVO SISTEMA: FIREBASE BASE64 (Sin Cloudinary)
+  // MANEJO DE ARCHIVOS LOCAL (Sin bucles)
   // ==========================================
 
-  // 1. Subir a Firebase
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Límite de seguridad para Firestore (800KB)
     if (file.size > 800000) {
       alert("⚠️ El archivo es demasiado pesado. Por favor sube un PDF de menos de 800KB.");
       return;
@@ -173,7 +187,6 @@ export default function App() {
 
     setUploadingId(workerId);
     
-    // Transformamos el PDF en un código de texto (Base64)
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
@@ -181,7 +194,7 @@ export default function App() {
       
       const newDoc = {
         nombre: file.name,
-        url: base64Pdf, // Guardamos el PDF completo como texto en Firebase
+        url: base64Pdf, 
         fecha: new Date().toISOString(),
         firmado: false
       };
@@ -190,7 +203,7 @@ export default function App() {
         await updateDoc(doc(db, 'trabajadores', workerId), {
           documentos: [...currentDocs, newDoc]
         });
-        alert('Documento guardado con éxito en Firebase.');
+        alert('Documento guardado con éxito.');
       } catch (error) {
         alert('Error al guardar el documento.');
       } finally {
@@ -199,27 +212,34 @@ export default function App() {
     };
   };
 
-  // 2. Previsualizar (Abre una ventana limpia)
+  // VERSIÓN CORRECTA DE PREVISUALIZACIÓN: Usando Blob Object URL
   const handlePreview = (base64Url) => {
-    const pdfWindow = window.open("");
-    pdfWindow.document.write(`
-      <html>
-        <head><title>Previsualización de Documento</title></head>
-        <body style="margin:0; padding:0; overflow:hidden;">
-          <embed width="100%" height="100%" src="${base64Url}" type="application/pdf">
-        </body>
-      </html>
-    `);
+    try {
+      const blob = base64ToBlob(base64Url);
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (error) {
+      alert("Error al cargar la previsualización.");
+    }
   };
 
-  // 3. Descargar Directamente (Garantizado)
+  // VERSIÓN CORRECTA DE DESCARGA: Usando Blob Object URL
   const handleDownload = (base64Url, filename) => {
-    const link = document.createElement('a');
-    link.href = base64Url;
-    link.download = filename || 'Documento_Flesan.pdf';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const blob = base64ToBlob(base64Url);
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'Documento_Flesan.pdf';
+      document.body.appendChild(link);
+      link.click();
+      
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl); // Limpia la memoria
+    } catch (error) {
+      alert("Error al descargar el documento.");
+    }
   };
 
   const handleDeleteDocument = async (workerId, currentDocs, docIndex) => {
@@ -376,8 +396,8 @@ export default function App() {
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
                     {!doc.firmado && <p className="text-xs text-gray-500 mt-1">Debes leer el documento antes de firmar.</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      <button onClick={() => handlePreview(doc.url)} className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">👁️ Ver Online</button>
-                      <button onClick={() => handleDownload(doc.url, doc.nombre)} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">⬇️ Descargar PDF</button>
+                      <button onClick={() => handlePreview(doc.url)} className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium cursor-pointer">👁️ Ver Online</button>
+                      <button onClick={() => handleDownload(doc.url, doc.nombre)} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium cursor-pointer">⬇️ Descargar PDF</button>
                     </div>
                   </div>
                   <div className="w-full md:w-auto mt-2 md:mt-0">
@@ -452,8 +472,8 @@ export default function App() {
                           <div className="flex-1 truncate mb-2 sm:mb-0 mr-4">
                             <p className="font-medium text-gray-800">📄 {docItem.nombre}</p>
                             <div className="flex gap-3 mt-1">
-                              <button onClick={() => handlePreview(docItem.url)} className="text-blue-600 hover:underline text-xs text-left">👁️ Ver</button>
-                              <button onClick={() => handleDownload(docItem.url, docItem.nombre)} className="text-gray-600 hover:underline text-xs text-left">⬇️ Descargar</button>
+                              <button onClick={() => handlePreview(docItem.url)} className="text-blue-600 hover:underline text-xs text-left cursor-pointer">👁️ Ver</button>
+                              <button onClick={() => handleDownload(docItem.url, docItem.nombre)} className="text-gray-600 hover:underline text-xs text-left cursor-pointer">⬇️ Descargar</button>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-3">

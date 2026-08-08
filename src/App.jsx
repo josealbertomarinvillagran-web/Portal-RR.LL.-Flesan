@@ -12,7 +12,7 @@ const SignaturePad = ({ onSave, onCancel }) => {
   useEffect(() => {
     const canvas = canvasRef.current;
     canvas.width = canvas.offsetWidth;
-    canvas.height = 200; // Altura fija
+    canvas.height = 200; 
     const ctx = canvas.getContext('2d');
     ctx.strokeStyle = '#000000';
     ctx.lineWidth = 2;
@@ -36,7 +36,6 @@ const SignaturePad = ({ onSave, onCancel }) => {
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
     
-    // Soporte para touch (celulares) y mouse (PC)
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
@@ -82,7 +81,6 @@ const SignaturePad = ({ onSave, onCancel }) => {
 };
 
 export default function App() {
-  // 1. ESTADOS DE SESIÓN
   const [userRole, setUserRole] = useState(null); 
   const [currentUser, setCurrentUser] = useState(null);
   
@@ -90,19 +88,16 @@ export default function App() {
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // 2. ESTADOS DEL ADMIN
   const [workers, setWorkers] = useState([]);
   const [name, setName] = useState('');
   const [rut, setRut] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [uploadingId, setUploadingId] = useState(null);
 
-  // 3. ESTADOS DEL TRABAJADOR
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [isDrawingSignature, setIsDrawingSignature] = useState(false);
 
-  // Cargar lista de trabajadores
   useEffect(() => {
     if (userRole === 'admin') {
       const q = query(collection(db, 'trabajadores'));
@@ -124,12 +119,10 @@ export default function App() {
     return workerName.includes(term) || workerRut.includes(term);
   });
 
-  // Inicio de Sesión
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
 
-    // CORRECCIÓN: Usuario administrador ahora es admin@flesan.cl
     if (loginId === 'admin@flesan.cl' && loginPass === 'admin') {
       setUserRole('admin');
       setCurrentUser({ nombre: 'Administrador RRHH' });
@@ -169,13 +162,6 @@ export default function App() {
     setIsDrawingSignature(false);
   };
 
-  // CORRECCIÓN: Forzar descarga directa en Cloudinary
-  const getDownloadUrl = (url) => {
-    if (!url) return '#';
-    // Inyecta fl_attachment para que el navegador descargue en lugar de crear bucles
-    return url.replace('/upload/', '/upload/fl_attachment/');
-  };
-
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -211,7 +197,24 @@ export default function App() {
     }
   };
 
-  // Guardar Firma en Firebase
+  // NUEVA FUNCIÓN: Eliminar un documento específico del perfil
+  const handleDeleteDocument = async (workerId, currentDocs, docIndex) => {
+    if (window.confirm("¿Estás seguro de que deseas quitar este documento del perfil del trabajador? Esta acción no se puede deshacer.")) {
+      const updatedDocs = currentDocs.filter((_, index) => index !== docIndex);
+      try {
+        await updateDoc(doc(db, 'trabajadores', workerId), {
+          documentos: updatedDocs
+        });
+        // Si el admin está borrando un documento de sí mismo (poco probable, pero por si acaso), actualizamos el estado
+        if (currentUser && currentUser.id === workerId) {
+          setCurrentUser({ ...currentUser, documentos: updatedDocs });
+        }
+      } catch (error) {
+        alert("Error al eliminar el documento.");
+      }
+    }
+  };
+
   const handleSaveSignature = async (base64Image) => {
     try {
       await updateDoc(doc(db, 'trabajadores', currentUser.id), {
@@ -225,7 +228,6 @@ export default function App() {
     }
   };
 
-  // Firmar Documento
   const handleSignDocument = async (docIndex) => {
     if (!currentUser.firma) {
       alert("Por favor, crea tu Firma Digital primero en la sección de arriba.");
@@ -249,7 +251,6 @@ export default function App() {
     }
   };
 
-  // Administrador: Agregar, Borrar, Resetear Clave
   const handleAddWorker = async (e) => {
     e.preventDefault();
     if (!name || !rut) return;
@@ -260,9 +261,11 @@ export default function App() {
       setName(''); setRut('');
     } catch (error) { alert("Error al guardar."); }
   };
+  
   const handleDeleteWorker = async (id) => {
-    if (window.confirm("¿ELIMINAR a este trabajador?")) await deleteDoc(doc(db, 'trabajadores', id));
+    if (window.confirm("¿ELIMINAR a este trabajador? Todo su registro desaparecerá.")) await deleteDoc(doc(db, 'trabajadores', id));
   };
+  
   const handleResetPassword = async (id) => {
     if (window.confirm("¿Reiniciar la contraseña a 'pass'?")) {
       await updateDoc(doc(db, 'trabajadores', id), { password: 'pass' });
@@ -317,7 +320,6 @@ export default function App() {
           <p className="text-gray-500 mt-1">RUT: {currentUser.rut}</p>
         </div>
 
-        {/* Módulo: Mi Firma Digital */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
           <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Mi Firma Digital</h3>
           
@@ -345,7 +347,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Mis Documentos */}
         <div className="bg-white p-6 rounded-lg border border-gray-200 mb-6 shadow-sm">
           <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">Mis Documentos Legales</h3>
           {docs.length === 0 ? (
@@ -357,8 +358,8 @@ export default function App() {
                   <div className="mb-4 sm:mb-0 w-full sm:w-1/2">
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
                     <p className="text-xs text-gray-500 mt-1">Debes previsualizar antes de firmar.</p>
-                    <a href={getDownloadUrl(doc.url)} className="inline-block mt-2 text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">
-                      👁️ Previsualizar / Descargar Documento
+                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">
+                      👁️ Previsualizar Documento
                     </a>
                   </div>
                   <div>
@@ -379,7 +380,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Cambio de clave */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
           <h3 className="text-lg font-semibold text-gray-700 mb-4">Seguridad</h3>
           <form onSubmit={async (e) => {
@@ -441,7 +441,7 @@ export default function App() {
                       <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleFileUpload(worker.id, worker.documentos, e)} disabled={uploadingId === worker.id} />
                     </label>
                     <button onClick={() => handleResetPassword(worker.id)} className="text-yellow-600 hover:bg-yellow-50 border border-yellow-200 px-3 py-1 rounded text-sm transition-colors" title="Restablecer clave a 'pass'">Reiniciar Clave</button>
-                    <button onClick={() => handleDeleteWorker(worker.id)} className="text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1 rounded text-sm transition-colors">Borrar</button>
+                    <button onClick={() => handleDeleteWorker(worker.id)} className="text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1 rounded text-sm transition-colors">Borrar Trabajador</button>
                   </div>
                 </div>
 
@@ -449,12 +449,22 @@ export default function App() {
                   <div className="mt-4 bg-gray-50 p-3 rounded border border-gray-100">
                     <p className="text-sm font-semibold text-gray-600 mb-2">Documentos asignados:</p>
                     <div className="space-y-2">
-                      {worker.documentos.map((doc, idx) => (
+                      {worker.documentos.map((docItem, idx) => (
                         <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded border border-gray-200">
-                          <a href={getDownloadUrl(doc.url)} className="text-blue-600 hover:underline font-medium">📄 {doc.nombre}</a>
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${doc.firmado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                            {doc.firmado ? 'FIRMADO' : 'PENDIENTE'}
-                          </span>
+                          <a href={docItem.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium flex-1 truncate mr-4">📄 {docItem.nombre}</a>
+                          <div className="flex items-center gap-3">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${docItem.firmado ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {docItem.firmado ? 'FIRMADO' : 'PENDIENTE'}
+                            </span>
+                            {/* BOTÓN MAGICO DE BORRAR DOCUMENTO */}
+                            <button 
+                              onClick={() => handleDeleteDocument(worker.id, worker.documentos, idx)} 
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 font-bold px-2 py-1 rounded border border-transparent hover:border-red-200 transition-colors" 
+                              title="Eliminar este documento"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

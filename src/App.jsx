@@ -91,6 +91,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [isDrawingSignature, setIsDrawingSignature] = useState(false);
+  const [isLoadingDoc, setIsLoadingDoc] = useState(false); // Estado para avisar que se está cargando el visor
 
   useEffect(() => {
     if (userRole === 'admin') {
@@ -156,18 +157,47 @@ export default function App() {
     setIsDrawingSignature(false);
   };
 
-  // NUEVAS FUNCIONES DE ENLACE: Seguras y garantizadas
-  const getPreviewUrl = (url) => {
-    if (!url) return '#';
-    // Usamos el visor corporativo de Google Docs para evitar el bug de Chrome
-    return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=false`;
+  // ==========================================
+  // MAGIA PURA: DESCARGA Y VISOR LOCAL (BLOB)
+  // ==========================================
+  const handlePreview = async (url) => {
+    try {
+      setIsLoadingDoc(true);
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      // Forzamos el tipo PDF para que Chrome lo abra perfecto
+      const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+      const blobUrl = window.URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank'); // Abre en nueva pestaña sin bucles
+    } catch (error) {
+      alert("Error al cargar la previsualización.");
+    } finally {
+      setIsLoadingDoc(false);
+    }
   };
 
-  const getDownloadUrl = (url) => {
-    if (!url) return '#';
-    if (url.includes('/upload/fl_attachment/')) return url;
-    return url.replace('/upload/', '/upload/fl_attachment/');
+  const handleDownload = async (url, filename) => {
+    try {
+      setIsLoadingDoc(true);
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename || 'Documento_Flesan.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      alert("Error al descargar el documento.");
+    } finally {
+      setIsLoadingDoc(false);
+    }
   };
+
 
   const handleFileUpload = async (workerId, currentDocs = [], event) => {
     const file = event.target.files[0];
@@ -179,7 +209,6 @@ export default function App() {
     formData.append('upload_preset', 'documentos_flesan'); 
     
     try {
-      // Volvemos a auto/upload (Permitido por Cloudinary)
       const res = await fetch('https://api.cloudinary.com/v1_1/ki3o9nju/auto/upload', {
         method: 'POST',
         body: formData
@@ -359,9 +388,12 @@ export default function App() {
                     <p className="font-semibold text-gray-800 text-base">{doc.nombre}</p>
                     {!doc.firmado && <p className="text-xs text-gray-500 mt-1">Debes leer el documento antes de firmar.</p>}
                     <div className="flex flex-wrap gap-2 mt-3">
-                      {/* ENLACES ACTUALIZADOS Y GARANTIZADOS */}
-                      <a href={getPreviewUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium">👁️ Ver Online</a>
-                      <a href={getDownloadUrl(doc.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium">⬇️ Descargar PDF</a>
+                      <button onClick={() => handlePreview(doc.url)} disabled={isLoadingDoc} className="text-sm text-blue-600 border border-blue-300 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 font-medium disabled:opacity-50">
+                        {isLoadingDoc ? '⏳ Abriendo...' : '👁️ Ver Online'}
+                      </button>
+                      <button onClick={() => handleDownload(doc.url, doc.nombre)} disabled={isLoadingDoc} className="text-sm text-gray-700 border border-gray-300 bg-white px-3 py-1 rounded hover:bg-gray-100 font-medium disabled:opacity-50">
+                        {isLoadingDoc ? '⏳ Descargando...' : '⬇️ Descargar PDF'}
+                      </button>
                     </div>
                   </div>
                   <div className="w-full md:w-auto mt-2 md:mt-0">
@@ -423,7 +455,6 @@ export default function App() {
                       {uploadingId === worker.id ? '⏳ Subiendo...' : '📄 Subir PDF'}
                       <input type="file" accept="application/pdf" className="hidden" onChange={(e) => handleFileUpload(worker.id, worker.documentos, e)} disabled={uploadingId === worker.id} />
                     </label>
-                    <button onClick={() => handleResetPassword(worker.id)} className="text-yellow-600 hover:bg-yellow-50 border border-yellow-200 px-3 py-1 rounded text-sm transition-colors" title="Restablecer clave a 'pass'">Reiniciar Clave</button>
                     <button onClick={() => handleDeleteWorker(worker.id)} className="text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1 rounded text-sm transition-colors">Borrar Trabajador</button>
                   </div>
                 </div>
@@ -437,9 +468,8 @@ export default function App() {
                           <div className="flex-1 truncate mb-2 sm:mb-0 mr-4">
                             <p className="font-medium text-gray-800">📄 {docItem.nombre}</p>
                             <div className="flex gap-3 mt-1">
-                              {/* ENLACES ACTUALIZADOS Y GARANTIZADOS */}
-                              <a href={getPreviewUrl(docItem.url)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">👁️ Ver</a>
-                              <a href={getDownloadUrl(docItem.url)} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:underline text-xs">⬇️ Descargar</a>
+                              <button onClick={() => handlePreview(docItem.url)} disabled={isLoadingDoc} className="text-blue-600 hover:underline text-xs text-left disabled:opacity-50">👁️ Ver</button>
+                              <button onClick={() => handleDownload(docItem.url, docItem.nombre)} disabled={isLoadingDoc} className="text-gray-600 hover:underline text-xs text-left disabled:opacity-50">⬇️ Descargar</button>
                             </div>
                           </div>
                           <div className="flex items-center justify-between sm:justify-end gap-3">

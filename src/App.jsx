@@ -16,8 +16,9 @@ function App() {
   const [workers, setWorkers] = useState([]);
   const [name, setName] = useState('');
   const [rut, setRut] = useState('');
+  const [searchTerm, setSearchTerm] = useState(''); // Nuevo estado para la búsqueda
 
-  // 4. ESTADOS DEL TRABAJADOR (Cambio de clave)
+  // 4. ESTADOS DEL TRABAJADOR
   const [newPassword, setNewPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
 
@@ -36,19 +37,25 @@ function App() {
     }
   }, [userRole]);
 
+  // FUNCIÓN: Filtrar trabajadores en tiempo real
+  const filteredWorkers = workers.filter((worker) => {
+    const term = searchTerm.toLowerCase();
+    const workerName = worker.nombre ? worker.nombre.toLowerCase() : '';
+    const workerRut = worker.rut ? worker.rut.toLowerCase() : '';
+    return workerName.includes(term) || workerRut.includes(term);
+  });
+
   // FUNCIÓN: Manejar el Inicio de Sesión
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
 
-    // A. Comprobar credenciales de Administrador
     if (loginId === 'admin@flesa.cl' && loginPass === 'admin') {
       setUserRole('admin');
       setCurrentUser({ nombre: 'Administrador RRHH' });
       return;
     }
 
-    // B. Comprobar credenciales de Trabajador
     try {
       const q = query(collection(db, 'trabajadores'), where('rut', '==', loginId));
       const querySnapshot = await getDocs(q);
@@ -56,8 +63,6 @@ function App() {
       if (!querySnapshot.empty) {
         const workerData = querySnapshot.docs[0].data();
         const workerId = querySnapshot.docs[0].id;
-        
-        // Si el trabajador es antiguo y no tiene clave, asume 'pass'. Si tiene, usa la suya.
         const dbPassword = workerData.password || 'pass';
 
         if (loginPass === dbPassword) {
@@ -69,11 +74,9 @@ function App() {
           return;
         }
       } else {
-        // Si no es admin y el RUT no existe
         setLoginError('Credenciales incorrectas o RUT no registrado.');
       }
     } catch (error) {
-      console.error("Error al conectar:", error);
       setLoginError('Error de conexión. Inténtalo más tarde.');
     }
   };
@@ -85,12 +88,10 @@ function App() {
     setLoginId('');
     setLoginPass('');
     setPasswordMessage('');
+    setSearchTerm('');
   };
 
-  // ==========================================
   // FUNCIONES DEL ADMINISTRADOR
-  // ==========================================
-
   const handleAddWorker = async (e) => {
     e.preventDefault();
     if (!name || !rut) return;
@@ -100,7 +101,7 @@ function App() {
         rut: rut,
         fechaRegistro: new Date().toISOString(),
         estado: 'Al día',
-        password: 'pass' // Clave por defecto al crear
+        password: 'pass'
       });
       setName('');
       setRut('');
@@ -132,10 +133,7 @@ function App() {
     }
   };
 
-  // ==========================================
   // FUNCIONES DEL TRABAJADOR
-  // ==========================================
-
   const handleChangePassword = async (e) => {
     e.preventDefault();
     if (!newPassword) return;
@@ -150,7 +148,6 @@ function App() {
     }
   };
 
-
   // ==========================================
   // VISTA 1: PANTALLA DE INICIO DE SESIÓN
   // ==========================================
@@ -164,9 +161,7 @@ function App() {
           </div>
           <form onSubmit={handleLogin} className="space-y-6">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Usuario (Correo Admin o RUT Trabajador)
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Usuario (Correo Admin o RUT Trabajador)</label>
               <input type="text" value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="Ej: admin@flesa.cl o 12.345.678-9" className="w-full border border-gray-300 p-3 rounded focus:outline-none focus:border-blue-500" required />
             </div>
             <div>
@@ -193,7 +188,6 @@ function App() {
           <h1 className="text-3xl font-bold text-blue-800">Mi Perfil Flesan</h1>
           <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 font-medium">Cerrar Sesión</button>
         </div>
-        
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-8">
           <h2 className="text-2xl font-semibold text-gray-800">{currentUser.nombre}</h2>
           <p className="text-gray-500 mt-1">RUT: {currentUser.rut}</p>
@@ -201,30 +195,16 @@ function App() {
             Estado: {currentUser.estado || 'Al día'}
           </div>
         </div>
-
-        {/* Sección de Cambio de Contraseña */}
         <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 mb-8">
           <h3 className="text-lg font-semibold text-gray-700 mb-4">Seguridad de la Cuenta</h3>
           <form onSubmit={handleChangePassword} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-            <input 
-              type="password" 
-              placeholder="Escribe tu nueva contraseña" 
-              value={newPassword} 
-              onChange={(e) => setNewPassword(e.target.value)} 
-              className="border border-gray-300 p-2 rounded w-full sm:w-64 focus:outline-none focus:border-blue-500" 
-              required
-            />
+            <input type="password" placeholder="Escribe tu nueva contraseña" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="border border-gray-300 p-2 rounded w-full sm:w-64 focus:outline-none focus:border-blue-500" required />
             <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700 transition-colors w-full sm:w-auto">
               Actualizar Contraseña
             </button>
           </form>
-          {passwordMessage && (
-            <p className={`mt-3 text-sm font-medium ${passwordMessage.includes('éxito') ? 'text-green-600' : 'text-red-600'}`}>
-              {passwordMessage}
-            </p>
-          )}
+          {passwordMessage && <p className={`mt-3 text-sm font-medium ${passwordMessage.includes('éxito') ? 'text-green-600' : 'text-red-600'}`}>{passwordMessage}</p>}
         </div>
-
         <div className="bg-gray-50 p-8 text-center rounded-lg border border-dashed border-gray-300 text-gray-500">
           <p>Tus documentos y firmas estarán disponibles aquí próximamente.</p>
         </div>
@@ -243,6 +223,7 @@ function App() {
           <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 font-medium">Cerrar Sesión</button>
         </div>
 
+        {/* Sección: Ingresar Trabajador */}
         <div className="bg-gray-50 p-6 rounded-lg mb-8 shadow-sm border border-gray-200">
           <h2 className="text-xl font-semibold mb-4 text-gray-700">Ingresar Nuevo Trabajador</h2>
           <form onSubmit={handleAddWorker} className="flex flex-wrap gap-4">
@@ -254,10 +235,25 @@ function App() {
           </form>
         </div>
 
+        {/* Sección: Búsqueda y Lista */}
         <div>
-          <h2 className="text-xl font-semibold mb-4 text-gray-700">Personal Registrado ({workers.length})</h2>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+            <h2 className="text-xl font-semibold text-gray-700">
+              Personal Registrado ({filteredWorkers.length})
+            </h2>
+            <div className="w-full sm:w-72">
+              <input 
+                type="text" 
+                placeholder="Buscar por nombre, apellido o RUT..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full border border-gray-300 p-2 rounded-lg focus:outline-none focus:border-green-500 shadow-sm"
+              />
+            </div>
+          </div>
+
           <div className="space-y-3">
-            {workers.map((worker) => (
+            {filteredWorkers.map((worker) => (
               <div key={worker.id} className="bg-white border border-gray-200 p-4 rounded-lg flex flex-col md:flex-row justify-between items-start md:items-center shadow-sm">
                 <div className="mb-3 md:mb-0">
                   <p className="font-bold text-lg text-gray-800">{worker.nombre}</p>
@@ -280,9 +276,15 @@ function App() {
               </div>
             ))}
             
+            {/* Mensajes de lista vacía */}
             {workers.length === 0 && (
               <div className="text-center p-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
                 No hay trabajadores registrados en la base de datos aún.
+              </div>
+            )}
+            {workers.length > 0 && filteredWorkers.length === 0 && (
+              <div className="text-center p-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                No se encontraron resultados para "{searchTerm}".
               </div>
             )}
           </div>
